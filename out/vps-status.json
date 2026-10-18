@@ -1,0 +1,34 @@
+{
+  "active": true,
+  "hostname": "vpsfree-1",
+  "os": "Ubuntu 24.04.5 LTS",
+  "kernel": "6.17.0-1022-azure",
+  "cpu_threads": 2,
+  "ram_gb": 7.8,
+  "disk_free_gb": 14,
+  "ssh_port": 22,
+  "ssh_user": "vps",
+  "ssh_listen": "ok",
+  "public_ip": "57.151.83.101",
+  "tailscale_ip": "100.127.172.119",
+  "tailscale_dns": "vpsfree-1.tail2c0f95.ts.net",
+  "started_at": "2026-10-18T02:46:30Z",
+  "expires_at": "2026-10-18T08:28:30Z",
+  "duration_menit": 342,
+  "run_id": "39091220281",
+  "run_attempt": "1",
+  "run_number": "1",
+  "run_url": "https://github.com/rissasura-lang/Vpsrunner/actions/runs/39091220281",
+  "mode": "vpsfree",
+  "renewal": "tidak",
+  "akses": {
+    "mode": "tailscale",
+    "tailscale": {
+      "status": "ok",
+      "ip": "100.127.172.119",
+      "magicdns": "vpsfree-1.tail2c0f95.ts.net",
+      "hostname": "vpsfree-1",
+      "note": "HP/PC harus login Tailscale pada tailnet yang sama lalu SSH ke user@ip -p 22."
+    }
+  }
+}
