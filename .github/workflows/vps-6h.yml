@@ -1,0 +1,144 @@
+# vpsfree-workflow-schema: 6
+name: VpsFree — VPS 6 Jam
+
+on:
+  workflow_dispatch:
+    inputs:
+      durasi_menit:
+        description: 'Durasi sesi (menit, 10–342)'
+        required: false
+        default: '342'
+        type: string
+      hostname:
+        description: 'Prefix hostname Tailscale'
+        required: false
+        default: 'vpsfree'
+        type: string
+      vps_user:
+        description: 'Username sudo (root selalu aktif dengan password sama)'
+        required: false
+        default: 'vps'
+        type: string
+      runner:
+        description: 'Image runner Ubuntu GitHub Actions'
+        required: false
+        default: 'ubuntu-24.04'
+        type: choice
+        options:
+          - ubuntu-24.04
+          - ubuntu-22.04
+          - ubuntu-latest
+      perpanjang_otomatis:
+        description: 'Lanjutkan otomatis ke sesi berikutnya sebelum waktu habis (data & IP tetap)'
+        required: false
+        default: 'ya'
+        type: choice
+        options:
+          - ya
+          - tidak
+      renewal:
+        description: 'Internal: diisi otomatis saat estafet sesi'
+        required: false
+        default: 'tidak'
+        type: choice
+        options:
+          - tidak
+          - ya
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: vpsfree-active-session
+  cancel-in-progress: false
+
+jobs:
+  vps:
+    name: Sesi VPS (${{ inputs.runner || 'ubuntu-24.04' }})
+    runs-on: ${{ inputs.runner || 'ubuntu-24.04' }}
+    timeout-minutes: 360
+    env:
+      DUR: ${{ inputs.durasi_menit || '342' }}
+      VPS_HOST: ${{ inputs.hostname || 'vpsfree' }}
+      VPS_USER: ${{ inputs.vps_user || 'vps' }}
+      RUNNER_IMAGE: ${{ inputs.runner || 'ubuntu-24.04' }}
+      PERPANJANG_OTOMATIS: ${{ inputs.perpanjang_otomatis || 'ya' }}
+      RENEWAL: ${{ inputs.renewal || 'tidak' }}
+      VPS_PASSWORD: ${{ secrets.VPS_PASSWORD }}
+      TAILSCALE_AUTH_KEY: ${{ secrets.TAILSCALE_AUTH_KEY }}
+      CLEANUP_TOKEN: ${{ secrets.CLEANUP_TOKEN }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Bersihkan run lama
+        continue-on-error: true
+        run: bash scripts/cleanup-actions.sh
+
+      - name: Setup dasar VPS (root/sudo + SSH password)
+        run: bash scripts/setup-vps.sh
+
+      - name: Pulihkan state sesi sebelumnya
+        continue-on-error: true
+        run: bash scripts/restore-state.sh
+
+      - name: Setup akses Tailscale
+        run: bash scripts/setup-akses.sh
+
+      - name: Publish status aktif
+        continue-on-error: true
+        run: bash scripts/publish-status.sh --active true
+
+      - name: Jaga sesi hidup (heartbeat, checkpoint, handover, auto-stop)
+        run: bash scripts/keepalive.sh
+
+      - name: Simpan state final
+        if: always()
+        continue-on-error: true
+        run: bash scripts/persist-state.sh
+
+      - name: Upload state sebagai artifact
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: vpsfree-state
+          path: out/vps-state.tar.gz
+          retention-days: 30
+          if-no-files-found: ignore
+
+      - name: Publish status inactive
+        if: always()
+        continue-on-error: true
+        run: bash scripts/publish-status.sh --active false
+
+      - name: Finalize (putus Tailscale sesi ini)
+        if: always()
+        continue-on-error: true
+        run: bash scripts/finalize-vps.sh
+
+      - name: Estafet sesi berikutnya (fallback bila handover belum jalan)
+        if: ${{ !cancelled() && (inputs.perpanjang_otomatis || 'ya') != 'tidak' }}
+        continue-on-error: true
+        run: |
+          if [ -f /tmp/vps-handover-done ]; then
+            echo 'Handover sudah dijadwalkan oleh keepalive.'
+            exit 0
+          fi
+          BODY="$(jq -n \
+            --arg dur "$DUR" --arg host "$VPS_HOST" --arg user "$VPS_USER" \
+            --arg runner "$RUNNER_IMAGE" --arg renew "$PERPANJANG_OTOMATIS" \
+            '{ref:"main",inputs:{durasi_menit:$dur,hostname:$host,vps_user:$user,
+              runner:$runner,perpanjang_otomatis:$renew,renewal:"ya"}}')"
+          curl -fsS -X POST \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H 'Accept: application/vnd.github+json' \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            -H 'User-Agent: VpsFree' \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/workflows/vps-6h.yml/dispatches" \
+            -d "$BODY" \
+            && echo 'Sesi berikutnya dijadwalkan otomatis.' \
+            || echo 'Auto-renew dilewati.'

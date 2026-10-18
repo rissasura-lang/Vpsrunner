@@ -1,0 +1,3 @@
+# kredensial lokal — JANGAN PERNAH di-commit ke repo publik
+*.env
+out/

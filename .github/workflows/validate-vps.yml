@@ -1,0 +1,32 @@
+name: Validate VpsFree bash scripts
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'scripts/*.sh'
+      - '.github/workflows/vps-6h.yml'
+      - '.github/workflows/validate-vps.yml'
+permissions:
+  contents: read
+jobs:
+  scripts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Bash syntax check
+        run: |
+          set -e
+          for f in scripts/*.sh; do
+            echo "bash -n $f"
+            bash -n "$f"
+          done
+      - name: Ensure ShellCheck
+        run: |
+          if ! command -v shellcheck >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq shellcheck
+          fi
+          shellcheck --version
+      - name: ShellCheck
+        run: shellcheck --severity=error scripts/*.sh
